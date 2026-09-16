@@ -1,0 +1,4 @@
+Modelo,R2,MAE,MAPE (%),RMSE
+Regressão Linear Múltipla,0.8451,2.0533,24.7558,3.6198
+Random Forest Regressor,0.888,1.6506,20.7766,3.0775
+Support Vector Regressor (SVR),0.8674,1.7065,19.5835,3.349
