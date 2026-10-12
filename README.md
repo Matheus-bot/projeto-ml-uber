@@ -7,161 +7,289 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)
 ![Jupyter](https://img.shields.io/badge/Jupyter-F37626?style=flat-square&logo=jupyter&logoColor=white)
 
-Análise comparativa entre três algoritmos de regressão supervisionada aplicados à previsão de tarifas de corridas do Uber na região metropolitana de Nova York.
 
-Projeto desenvolvido para a disciplina de **Aprendizagem de Máquina**.
+Projeto da disciplina de Aprendizagem de Máquina (DSM, 5º semestre, 2026). O objetivo é prever o valor de uma corrida de Uber em Nova York a partir das coordenadas de embarque e desembarque, da data e hora e do número de passageiros, comparando três algoritmos de regressão com uma linha de base.
+
+**Resultado:** o Random Forest Regressor foi o modelo recomendado, com R² de 0,8880 e erro médio absoluto de US$ 1,65 por corrida no conjunto de teste.
 
 ---
 
 ## Sumário
 
-- [Visão geral](#visão-geral)
+- [Problema](#problema)
+- [Dados](#dados)
+- [Pipeline](#pipeline)
+- [Engenharia de features](#engenharia-de-features)
+- [Modelagem](#modelagem)
 - [Resultados](#resultados)
-- [O dataset](#o-dataset)
-- [Metodologia](#metodologia)
+- [Conclusão](#conclusão)
+- [Dashboard](#dashboard)
 - [Estrutura do repositório](#estrutura-do-repositório)
 - [Como executar](#como-executar)
-- [Dashboard](#dashboard)
-- [Conclusões](#conclusões)
-- [Tecnologias](#tecnologias)
-- [Autores](#autores)
+- [Limitações e trabalhos futuros](#limitações-e-trabalhos-futuros)
+- [Equipe](#equipe)
 
 ---
 
-## Visão geral
+## Problema
 
-O objetivo é estimar o valor da tarifa de uma corrida a partir de suas características — origem, destino, data, horário e número de passageiros — comparando três abordagens de regressão e identificando qual apresenta melhor poder de generalização.
+| Item | Descrição |
+| --- | --- |
+| Tipo | Regressão supervisionada |
+| Variável alvo | `fare_amount` (tarifa em dólares) |
+| Modelos comparados | DummyRegressor (linha de base), Regressão Linear Múltipla, Random Forest Regressor, Support Vector Regression (SVR) |
+| Métricas | R², MAE, RMSE, MAPE |
+| Validação | Divisão treino/teste 80/20 e validação cruzada com 5 partições |
 
-O principal achado do trabalho é metodológico: **as variáveis originais do dataset apresentam correlação máxima de 0,44 com a tarifa**. A variável `distancia_km`, derivada das coordenadas geográficas pela fórmula de Haversine, alcança correlação de **0,90** e responde por **87,96%** da importância preditiva do melhor modelo.
+---
+
+## Dados
+
+Base [Uber Fares Dataset](https://www.kaggle.com/datasets/yasserh/uber-fares-dataset) (Kaggle): 200.000 corridas em Nova York entre 2009 e 2015, com 9 colunas.
+
+| Coluna | Descrição | Uso |
+| --- | --- | --- |
+| `Unnamed: 0`, `key` | Identificadores | Descartadas |
+| `fare_amount` | Tarifa em dólares | Variável alvo |
+| `pickup_datetime` | Data e hora do embarque | Origem de `ano`, `mes`, `dia_semana`, `hora` |
+| `pickup_longitude`, `pickup_latitude` | Coordenadas de embarque | Entrada e cálculo da distância |
+| `dropoff_longitude`, `dropoff_latitude` | Coordenadas de desembarque | Entrada e cálculo da distância |
+| `passenger_count` | Número de passageiros | Entrada |
+
+### Limpeza
+
+Foram removidos apenas valores impossíveis ou erros de registro.
+
+| Critério | Registros removidos |
+| --- | --- |
+| Coordenadas fora de Nova York (longitude −74,3 a −73,7; latitude 40,5 a 41,0) | 4.419 |
+| Distância menor que 100 metros | 3.096 |
+| Zero passageiros | 709 |
+| Tarifa acima de US$ 100 | 84 |
+| Tarifa menor ou igual a zero | 22 |
+| 208 passageiros | 1 |
+| Valor nulo | 1 |
+| **Base final** | **191.735 corridas (4,13% removido)** |
+
+Critérios se sobrepõem; a soma da tabela é maior que o total removido.
+
+O método IQR não foi usado para a tarifa: seu limite superior (US$ 22,25) eliminaria a maioria das corridas de aeroporto, que são legítimas. O corte em US$ 100 remove 0,042% da base.
+
+---
+
+## Pipeline
+
+```
+Uber_DS.csv (200.000 corridas)
+        |
+        v
+Diagnóstico ---------> nulos, tarifas inválidas, coordenadas fora de NY, passageiros
+        |
+        v
+Limpeza -------------> 194.831 corridas
+        |
+        v
+Engenharia de features -> distancia_km (Haversine), eh_aeroporto, ano, mes, dia_semana, hora
+        |                  remoção de distância < 100 m -> 191.735 corridas
+        v
+EDA -----------------> distribuição, correlação, VIF
+        |
+        v
+Divisão 80/20 -------> treino 153.388 | teste 38.347
+        |
+        v
+StandardScaler ------> ajustado só no treino
+        |
+        v
+Ajuste de hiperparâmetros (GridSearchCV / validação cruzada, 20.000 corridas)
+        |
+        +--> Experimento 1: cada modelo com o máximo de dados viável
+        +--> Experimento 2: os três modelos com as mesmas 20.000 corridas
+        |
+        v
+Avaliação ------------> R², MAE, RMSE, MAPE, overfitting, validação cruzada, erro por faixa
+        |
+        v
+Modelo final (Random Forest) -> app/modelo_rf.pkl -> dashboard Streamlit
+```
+
+---
+
+## Engenharia de features
+
+| Feature | Como foi criada | Correlação com a tarifa |
+| --- | --- | --- |
+| `distancia_km` | Fórmula de Haversine entre embarque e desembarque | 0,90 |
+| `eh_aeroporto` | 1 se embarque ou desembarque a menos de 2 km do JFK, LaGuardia ou Newark | 0,68 |
+| `ano` | Extraído de `pickup_datetime` | 0,13 |
+| `mes` | Extraído de `pickup_datetime` | 0,03 |
+| `dia_semana` | Extraído de `pickup_datetime` | 0,00 |
+| `hora` | Extraído de `pickup_datetime` | −0,02 |
+
+A maior correlação entre as variáveis originais era 0,44 (`pickup_longitude`). A distância criada passou a responder por 87,96% da importância do modelo final.
+
+**Corridas de aeroporto** (10.547, 5,5% da base):
+
+| | Aeroporto | Demais |
+| --- | --- | --- |
+| Tarifa média | US$ 37,53 | US$ 9,75 |
+| Distância média | 13,13 km | 2,79 km |
+| Custo por km | US$ 2,86 | US$ 3,49 |
+
+**Multicolinearidade:** VIF máximo de 2,46 (`eh_aeroporto`), abaixo do limite usual de 5.
+
+---
+
+## Modelagem
+
+### Desenho experimental
+
+O SVR com a base completa não concluiu o treino em 30 minutos (custo entre O(n²) e O(n³)). Por isso foram conduzidos dois experimentos:
+
+| | Experimento 1 | Experimento 2 |
+| --- | --- | --- |
+| Objetivo | Desempenho prático de cada modelo | Comparação em condições iguais |
+| Treino da LR e do RF | 153.388 corridas | 20.000 corridas |
+| Treino do SVR | 20.000 corridas | 20.000 corridas |
+| Teste | 38.347 corridas | 38.347 corridas |
+
+As 20.000 corridas são as primeiras linhas do conjunto de treino, já embaralhado por `train_test_split(random_state=42)`.
+
+### Ajuste de hiperparâmetros
+
+**Random Forest** — busca em grade, validação cruzada com 5 partições:
+
+| `max_depth` | `min_samples_leaf` | R² médio |
+| --- | --- | --- |
+| None | 5 | 0,8672 |
+| **20** | **5** | **0,8672 (escolhido)** |
+| 20 | 1 | 0,8662 |
+| None | 1 | 0,8661 |
+| 10 | 5 | 0,8650 |
+
+**SVR** — comparação de kernels (C = 100, epsilon = 0,1):
+
+| Kernel | R² teste | MAE | Tempo de treino |
+| --- | --- | --- | --- |
+| Linear | 0,8404 | 1,98 | 648 s |
+| **RBF** | **0,8674** | **1,71** | **205 s** |
+
+**SVR** — ajuste de C e gamma (kernel RBF, validação cruzada com 5 partições):
+
+| C | gamma | R² médio |
+| --- | --- | --- |
+| **100** | **0,01** | **0,8664 (escolhido)** |
+| 1000 | 0,01 | 0,8658 |
+| 10 | 0,01 | 0,8628 |
+| 10 | scale | 0,8625 |
+| 100 | scale | 0,8578 |
+| 10 | 0,5 | 0,7498 |
+
+### Configuração final
+
+| Modelo | Hiperparâmetros |
+| --- | --- |
+| DummyRegressor | `strategy='mean'` |
+| Regressão Linear | padrão |
+| Random Forest | `n_estimators=100`, `max_depth=20`, `min_samples_leaf=5`, `random_state=42` |
+| SVR | `kernel='rbf'`, `C=100`, `gamma=0.01`, `epsilon=0.1` |
 
 ---
 
 ## Resultados
 
-| Modelo | R² | MAE (USD) | MAPE (%) | RMSE |
-| :--- | ---: | ---: | ---: | ---: |
-| Regressão Linear Múltipla | 0,8451 | 2,0533 | 24,76 | 3,6198 |
-| **Random Forest Regressor** | **0,8880** | **1,6506** | 20,78 | **3,0775** |
-| Support Vector Regressor (SVR) | 0,8674 | 1,7065 | **19,58** | 3,3490 |
+### Experimento 1 — máximo de dados viável
 
-*Métricas calculadas sobre o conjunto de teste (38.347 registros nunca vistos pelos modelos).*
+| Modelo | Treino (n) | R² | MAE (US$) | RMSE (US$) | MAPE | Treino (s) | Previsão (s) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Dummy | 153.388 | 0,0000 | 5,89 | 9,20 | 66,50% | — | — |
+| Regressão Linear | 153.388 | 0,8451 | 2,05 | 3,62 | 24,76% | 0,13 | instantâneo |
+| **Random Forest** | 153.388 | **0,8880** | **1,65** | **3,08** | 20,78% | 72,04 | 0,40 |
+| SVR | 20.000 | 0,8728 | 1,72 | 3,28 | **19,93%** | 36,23 | 57,26 |
 
-### Validação cruzada (5 folds)
+### Experimento 2 — mesmas 20.000 corridas
 
-| Modelo | Média R² | Desvio padrão | Amplitude entre folds |
-| :--- | ---: | ---: | ---: |
-| Regressão Linear | 0,8426 | 0,0078 | 0,0203 |
-| Random Forest | 0,8876 | 0,0083 | 0,0229 |
-| SVR | 0,8446 | 0,0274 | 0,0801 |
+| Modelo | R² | MAE (US$) | RMSE (US$) | MAPE | Treino (s) |
+| --- | --- | --- | --- | --- | --- |
+| Dummy | −0,0001 | 5,92 | 9,20 | 67,39% | — |
+| Regressão Linear | 0,8449 | 2,06 | 3,62 | 24,77% | 0,02 |
+| **Random Forest** | **0,8737** | 1,79 | **3,27** | 22,36% | 5,46 |
+| SVR | 0,8728 | **1,72** | 3,28 | **19,93%** | 36,23 |
 
-O Random Forest apresentou desempenho superior em **todos os cinco folds** — seu pior resultado (0,8722) supera o melhor resultado da Regressão Linear (0,8475).
+### Overfitting (R² treino − R² teste)
+
+| Modelo | Experimento 1 | Experimento 2 |
+| --- | --- | --- |
+| Regressão Linear | −0,0023 | −0,0034 |
+| Random Forest | +0,0487 | +0,0551 |
+| SVR | +0,0021 | +0,0021 |
+
+### Validação cruzada (R² médio ± desvio-padrão, 5 partições)
+
+| Modelo | Experimento 1 | Experimento 2 |
+| --- | --- | --- |
+| Regressão Linear | 0,8426 ± 0,0078 | 0,8402 ± 0,0226 |
+| Random Forest | **0,8882 ± 0,0082** | **0,8672 ± 0,0188** |
+| SVR | 0,8664 ± 0,0193 | 0,8664 ± 0,0193 |
+
+### Erro por faixa de preço (MAE em US$, Experimento 1)
+
+| Faixa da tarifa real | Corridas | Regressão Linear | Random Forest | SVR |
+| --- | --- | --- | --- | --- |
+| até US$ 10 | 23.934 | 1,35 | 1,11 | **1,01** |
+| US$ 10 a 20 | 10.450 | 2,30 | **1,92** | 2,16 |
+| US$ 20 a 30 | 2.067 | 4,52 | **3,55** | 4,19 |
+| US$ 30 a 40 | 910 | 5,24 | **4,06** | 4,41 |
+| US$ 40 a 60 | 912 | 7,27 | **5,09** | 5,99 |
+| acima de US$ 60 | 74 | 23,53 | **12,78** | 15,02 |
+
+O erro cresce com o valor da corrida (heterocedasticidade). O SVR tem o menor MAPE porque erra menos nas corridas baratas, que pesam mais numa métrica percentual; o Random Forest erra menos em todas as demais faixas.
+
+### Variáveis mais relevantes
+
+| Random Forest (importância) | | Regressão Linear (coeficiente padronizado) | |
+| --- | --- | --- | --- |
+| `distancia_km` | 0,8796 | `distancia_km` | 7,5394 |
+| `dropoff_longitude` | 0,0306 | `eh_aeroporto` | 1,6679 |
+| `ano` | 0,0242 | `ano` | 0,9758 |
+| `eh_aeroporto` | 0,0156 | `dropoff_longitude` | −0,4646 |
+| `dropoff_latitude` | 0,0144 | `dropoff_latitude` | −0,3046 |
+
+O coeficiente da distância equivale a cerca de US$ 2,12 por quilômetro. Intercepto: US$ 11,28.
 
 ---
 
-## O dataset
+## Conclusão
 
-[Uber Fares Dataset](https://www.kaggle.com/code/moham9/uber-fares-group-project/input) — 200.000 corridas realizadas em Nova York entre 2009 e 2015.
+**Modelo recomendado: Random Forest Regressor.**
 
-**Variável alvo:** `fare_amount` (valor da tarifa em USD)
+| Critério | Regressão Linear | Random Forest | SVR |
+| --- | --- | --- | --- |
+| Desempenho (R², Exp. 1) | 0,8451 | **0,8880** | 0,8728 |
+| Erro médio por corrida | US$ 2,05 | **US$ 1,65** | US$ 1,72 |
+| Escala para a base completa | Sim | Sim | Não |
+| Tempo de previsão (38.347 corridas) | instantâneo | 0,40 s | 57,26 s |
+| Tamanho do modelo | 737 bytes | 45,9 MB | — |
+| Interpretabilidade | Alta | Média (importância das variáveis) | Baixa |
 
-### Tratamento aplicado
-
-| Anomalia identificada | Registros | Decisão |
-| :--- | ---: | :--- |
-| Tarifa negativa ou nula | 22 | Remoção |
-| Tarifa acima de USD 100 | 84 | Remoção |
-| Zero passageiros | 709 | Remoção |
-| 208 passageiros | 1 | Remoção |
-| Coordenadas fora da região de NY | 4.419 | Remoção |
-| Coordenadas ausentes | 1 | Remoção |
-| Distância inferior a 100 m | 3.096 | Remoção |
-
-**Base final:** 191.735 registros (95,87% do original).
-
-> **Sobre o corte em USD 100.** O critério do intervalo interquartil indicaria USD 22,25 como limite superior. Optou-se por não adotá-lo: corridas com destino aos aeroportos custam legitimamente entre USD 50 e USD 70, e a aplicação do critério estatístico eliminaria integralmente esse padrão.
-
-> **Sobre as coordenadas nulas.** Cerca de 3.800 registros apresentavam coordenadas iguais a zero — ponto localizado no Golfo da Guiné. O padrão caracteriza falha de GPS em que o sistema grava zero em vez de valor ausente, razão pela qual a verificação por `isnull()` detectou apenas um registro.
+- O Random Forest tem o maior R² e o menor RMSE nos dois experimentos e a maior média na validação cruzada. Erra 20% menos que a Regressão Linear.
+- A Regressão Linear é a alternativa quando é obrigatório justificar cada previsão ou quando o hardware é muito limitado.
+- O SVR empata com o Random Forest em condições iguais, mas não escala para a base completa e é o mais lento para prever.
+- A engenharia de features pesou mais que a escolha do algoritmo: a distância, ausente do dataset original, responde por 88% da importância do modelo final.
 
 ---
 
-## Metodologia
+## Dashboard
 
-### Engenharia de features
+Aplicação em Streamlit com o Random Forest treinado na base completa.
 
-Seis variáveis foram derivadas dos dados brutos:
-
-| Variável criada | Origem | Justificativa |
-| :--- | :--- | :--- |
-| `distancia_km` | Fórmula de Haversine sobre as 4 coordenadas | Principal determinante da tarifa |
-| `ano` | `pickup_datetime` | Reajustes tarifários entre 2009 e 2015 |
-| `mes` | `pickup_datetime` | Sazonalidade e fluxo turístico |
-| `dia_semana` | `pickup_datetime` | Variação de demanda semanal |
-| `hora` | `pickup_datetime` | Horário de pico e tarifa dinâmica |
-| `eh_aeroporto` | Proximidade de JFK, LGA ou EWR (raio de 2 km) | Regime tarifário distinto |
-
-A distância não pode ser obtida por subtração direta das coordenadas: a extensão de um grau de longitude varia com a latitude — aproximadamente 111 km no Equador, reduzindo-se em direção aos polos. A fórmula de Haversine calcula a distância sobre a superfície esférica.
-
-**Validação empírica da variável `eh_aeroporto`:**
-
-| Grupo | Tarifa média | Distância média | Custo por km |
-| :--- | ---: | ---: | ---: |
-| Urbano | USD 9,75 | 2,79 km | USD 3,49 |
-| Aeroporto | USD 37,53 | 13,13 km | USD 2,86 |
-
-O custo por quilômetro é inferior no grupo aeroporto, evidenciando **dois regimes tarifários com inclinações distintas** — situação em que a variável de distância isoladamente seria insuficiente.
-
-### Correlação com a variável alvo
-
-| Variável | Correlação | Origem |
-| :--- | ---: | :--- |
-| `distancia_km` | 0,90 | Derivada |
-| `eh_aeroporto` | 0,68 | Derivada |
-| `pickup_longitude` | 0,44 | Original |
-| `dropoff_longitude` | 0,32 | Original |
-| `pickup_latitude` | −0,22 | Original |
-| `dropoff_latitude` | −0,19 | Original |
-| `ano` | 0,13 | Derivada |
-| `mes` | 0,03 | Derivada |
-| `passenger_count` | 0,01 | Original |
-| `dia_semana` | 0,00 | Derivada |
-| `hora` | −0,02 | Derivada |
-
-As variáveis `hora` e `dia_semana` apresentam correlação próxima de zero, o que **não implica ausência de poder preditivo**: o coeficiente de Pearson mede exclusivamente associações lineares, e tais variáveis possuem natureza cíclica. A análise de importância no Random Forest confirmou essa hipótese — `hora` obteve importância de 0,0082, superior à de `pickup_latitude`.
-
-### Multicolinearidade
-
-Verificada por Variance Inflation Factor. Todas as variáveis apresentaram VIF inferior a 2,5, muito abaixo do limiar convencional de 5.
-
-| Variável | VIF |
-| :--- | ---: |
-| `eh_aeroporto` | 2,46 |
-| `distancia_km` | 1,96 |
-| `pickup_longitude` | 1,71 |
-| `dropoff_longitude` | 1,32 |
-| `dropoff_latitude` | 1,28 |
-| `pickup_latitude` | 1,27 |
-| Demais variáveis | ≤ 1,01 |
-
-### Pré-processamento
-
-| Etapa | Procedimento | Justificativa |
-| :--- | :--- | :--- |
-| Divisão | 80% treino / 20% teste, `random_state=42` | Reprodutibilidade e comparabilidade entre modelos |
-| Escalonamento | `StandardScaler` (média 0, desvio 1) | Obrigatório para o kernel RBF do SVR |
-| Ajuste do scaler | `fit_transform` apenas no treino | Prevenção de *data leakage* |
-| Validação | Cross-validation com 5 partições | Verificação de estabilidade das métricas |
-
-A padronização foi preferida à normalização (`MinMaxScaler`) pela sensibilidade desta última a valores extremos. O kernel RBF computa similaridade por distância euclidiana — sem padronização, a variável `ano` (ordem de 10³) dominaria integralmente o cálculo, anulando a contribuição das demais.
-
-### Configuração dos modelos
-
-| Modelo | Hiperparâmetros | Observação |
-| :--- | :--- | :--- |
-| `LinearRegression` | Padrão | Baseline estatístico |
-| `RandomForestRegressor` | `n_estimators=100`, `max_depth=20`, `min_samples_leaf=5` | Profundidade limitada como controle de overfitting |
-| `SVR` | `kernel='rbf'`, `C=100`, `gamma='scale'`, `epsilon=0.1` | Treinado em amostra de 20.000 registros |
-
-O SVR possui complexidade entre O(n²) e O(n³), o que inviabiliza o treinamento sobre os 153.388 registros disponíveis. A avaliação, contudo, foi realizada sobre o conjunto de teste integral, preservando a comparabilidade.
+| Aba | Conteúdo |
+| --- | --- |
+| Visão Geral | Indicadores da base e distribuição das tarifas |
+| Análise Exploratória | Matriz de correlação, correlação com a tarifa, distância × tarifa |
+| Ajuste dos Modelos | Busca em grade do Random Forest, comparação de kernels, ajuste de C e gamma |
+| Comparação de Modelos | Métricas dos dois experimentos, overfitting, tempos, validação cruzada, erro por faixa, gráficos |
+| Simulador de Tarifa | Previsão para uma corrida a partir de locais conhecidos ou coordenadas |
 
 ---
 
@@ -169,28 +297,28 @@ O SVR possui complexidade entre O(n²) e O(n³), o que inviabiliza o treinamento
 
 ```
 projeto-ml-uber/
-│
-├── data/
-│   ├── uber.csv                  Dataset bruto (não versionado)
-│   ├── uber_tratado.csv          Base após limpeza e feature engineering
-│   ├── tabela_metricas.csv       Métricas comparativas dos três modelos
-│   ├── real_vs_predito.png       Painel de dispersão dos três modelos
-│   └── residuos.png              Análise de resíduos
-│
-├── notebooks/
-│   └── 01_eda.ipynb              EDA, tratamento, modelagem e avaliação
-│
 ├── app/
-│   ├── dashboard.py              Aplicação Streamlit
-│   ├── modelo_rf.pkl             Random Forest serializado
-│   ├── modelo_lr.pkl             Regressão Linear serializada
-│   └── scaler.pkl                StandardScaler ajustado no treino
-│
-├── .streamlit/
-│   └── config.toml               Tema da aplicação
-│
+│   ├── modelo_rf.pkl          Random Forest final (gerado pelo notebook)
+│   ├── modelo_lr.pkl          Regressão Linear (gerado pelo notebook)
+│   └── scaler.pkl             StandardScaler ajustado no treino
+├── data/
+│   ├── Uber_DS.csv            base original
+│   ├── uber_tratado.csv       base limpa com as features
+│   ├── metricas_exp1.csv      métricas do Experimento 1
+│   ├── metricas_exp2.csv      métricas do Experimento 2
+│   ├── validacao_cruzada.csv
+│   ├── ajuste_rf.csv
+│   ├── ajuste_svr.csv
+│   ├── comparacao_kernels.csv
+│   ├── erro_por_faixa.csv
+│   ├── coeficientes_lr.csv
+│   ├── importancias_rf.csv
+│   └── *.png                  gráficos
+├── notebooks/
+│   └── projeto_uber.ipynb     pipeline completo
+├── streamlit/
+│   └── app.py                 dashboard
 ├── requirements.txt
-├── .gitignore
 └── README.md
 ```
 
@@ -198,155 +326,51 @@ projeto-ml-uber/
 
 ## Como executar
 
-### Pré-requisitos
-
-- Python 3.10 ou superior
-- Git
-
-### Instalação
+Requer Python 3.11 ou mais recente.
 
 ```bash
-git clone https://github.com/SEU-USUARIO/projeto-ml-uber.git
-cd projeto-ml-uber
-```
-
-Crie e ative o ambiente virtual:
-
-```bash
-# Windows
+# 1. Ambiente virtual
 python -m venv .venv
-.venv\Scripts\activate
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
-# Linux / macOS
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Instale as dependências:
-
-```bash
+# 2. Dependências
 pip install -r requirements.txt
+
+# 3. Notebook (gera modelos, tabelas e gráficos; cerca de 1 hora por causa do SVR)
+#    Abrir notebooks/projeto_uber.ipynb e executar todas as células
+
+# 4. Dashboard (a partir da raiz do projeto)
+streamlit run streamlit/app.py
 ```
 
-### Obter o dataset
+O arquivo `data/Uber_DS.csv` deve estar presente antes de executar o notebook. O dashboard depende dos arquivos gerados pelo notebook em `data/` e `app/`.
 
-O arquivo `uber.csv` não está versionado. Baixe pelo [Kaggle](https://www.kaggle.com/code/moham9/uber-fares-group-project/input) e coloque em `data/uber.csv`.
-
-### Executar o notebook
-
-```bash
-jupyter notebook notebooks/01_eda.ipynb
-```
-
-Ou abra diretamente no VS Code selecionando o kernel `.venv`.
-
-> Execute as células na ordem, de cima para baixo. O notebook gera os arquivos `uber_tratado.csv`, `tabela_metricas.csv`, os gráficos e os modelos serializados consumidos pelo dashboard.
-
-### Executar o dashboard
-
-```bash
-streamlit run app/dashboard.py
-```
-
-A aplicação abre automaticamente em `http://localhost:8501`.
+Os arquivos `.pkl` só podem ser carregados com a mesma versão do scikit-learn que os gerou.
 
 ---
 
-## Dashboard
+## Limitações e trabalhos futuros
 
-Aplicação Streamlit com quatro seções:
-
-| Aba | Conteúdo |
-| :--- | :--- |
-| **Visão Geral** | Indicadores da base e distribuição da variável alvo |
-| **Análise Exploratória** | Matriz de correlação e relação distância × tarifa |
-| **Comparação de Modelos** | Tabela de métricas, gráficos de performance e resíduos |
-| **Simulador de Tarifa** | Previsão em tempo real a partir de origem, destino e horário |
-
-O simulador permite selecionar entre treze pontos de referência de Nova York — incluindo os três aeroportos — e retorna a tarifa estimada pelo modelo Random Forest, acompanhada da distância calculada e da classificação de aeroporto.
-
----
-
-## Conclusões
-
-### Desempenho
-
-O **Random Forest Regressor** apresentou o melhor desempenho global, superior em R², MAE e RMSE, com consistência confirmada em todos os folds da validação cruzada. A superioridade decorre da natureza dos dados: a hipótese de linearidade é violada pela existência de dois regimes tarifários, pela natureza cíclica das variáveis temporais e pela presença de interações entre features.
-
-O **SVR** obteve o melhor MAPE (19,58%) apesar de MAE superior ao do Random Forest. A inversão decorre da tolerância epsilon, que desconsidera erros de pequena magnitude e resulta em distribuição de erro proporcionalmente mais equilibrada entre faixas de preço.
-
-### Overfitting
-
-| Modelo | R² treino | R² teste | Diferença |
-| :--- | ---: | ---: | ---: |
-| Regressão Linear | 0,8428 | 0,8451 | −0,0023 |
-| Random Forest | 0,9367 | 0,8880 | +0,0487 |
-| SVR | 0,9151 | 0,8674 | +0,0477 |
-
-A Regressão Linear não apresenta overfitting — comportamento coerente com modelo de alto viés e baixa variância. Random Forest e SVR apresentam overfitting moderado e controlado; no primeiro caso, os parâmetros `max_depth` e `min_samples_leaf` são precisamente os mecanismos que restringem o crescimento das árvores.
-
-### Análise de resíduos
-
-Três padrões sistemáticos foram identificados:
-
-1. **Heterocedasticidade** — a dispersão dos resíduos amplia-se conforme o valor predito aumenta, violando a premissa de homocedasticidade do Teorema de Gauss-Markov
-2. **Agrupamentos em USD 45–60** — correspondentes às corridas de tarifa fixa regulamentada do aeroporto JFK, cujo valor independe do percurso e portanto não é aprendível pelos algoritmos
-3. **Assimetria direcional** — os erros de maior magnitude são predominantemente de subestimação, coerente com a assimetria à direita da variável alvo
-
-### Recomendação
-
-A escolha do modelo não decorre exclusivamente do R². O modelo Random Forest serializado ocupa **45,9 MB** contra **737 bytes** da Regressão Linear — razão de aproximadamente 62.000 vezes.
-
-| Cenário de uso | Modelo recomendado |
-| :--- | :--- |
-| Predição em lote, precisão prioritária | Random Forest |
-| Alta frequência de requisições em tempo real | Regressão Linear |
-| Necessidade de justificar previsões individuais | Regressão Linear |
-| Ambiente com restrição de memória | Regressão Linear |
-
-O ganho de 4,29 pontos percentuais em R² justifica o Random Forest em aplicações analíticas, mas não necessariamente em produção de alto volume, onde a Regressão Linear entrega aproximadamente 95% do desempenho a uma fração do custo computacional.
-
-O **SVR não é recomendado** em nenhum dos cenários avaliados: posiciona-se em segundo lugar na precisão, apresenta o maior custo de treinamento, demonstrou a menor estabilidade na validação cruzada e sua complexidade impede o aproveitamento integral da base.
-
-### Consideração metodológica
-
-O achado mais relevante não se refere à comparação entre algoritmos, mas à etapa que a antecede. A variável `distancia_km` responde por 87,96% da importância preditiva do melhor modelo e não constava do dataset original, cuja correlação máxima com o alvo era de 0,44.
-
-Conclui-se que, neste problema, **a qualidade da engenharia de features determinou o desempenho em grau superior ao da escolha do algoritmo**.
+| Limitação | Trabalho futuro |
+| --- | --- |
+| Distância em linha reta, não pelo percurso | Distância e tempo pela rota real (API de mapas) |
+| Sem pedágio, trânsito ou tarifa dinâmica | Incluir essas variáveis, quando disponíveis no momento do pedido |
+| Tarifa fixa do JFK não modelada explicitamente | Variável específica para a regra e para bairros de origem e destino |
+| Heterocedasticidade dos erros | Transformação logarítmica da tarifa |
+| SVR e ajuste feitos em amostra de 20.000 | Testar Gradient Boosting (XGBoost, LightGBM) na base completa |
 
 ---
 
 ## Tecnologias
 
-| Biblioteca | Função |
-| :--- | :--- |
-| pandas | Manipulação e análise de dados tabulares |
-| NumPy | Operações vetorizadas e cálculo numérico |
-| scikit-learn | Implementação dos algoritmos e métricas |
-| matplotlib · seaborn | Visualização estatística |
-| joblib | Serialização dos modelos treinados |
-| Streamlit | Interface do dashboard |
+Python, pandas, NumPy, scikit-learn, Matplotlib, seaborn, joblib, Streamlit.
 
 ---
 
-## Autores
+## Equipe
 
-**Grupo 03** — Aprendizagem de Máquina
-
-| Integrante | Responsabilidade |
-| :--- | :--- |
-| Erika | — |
-| Felipe | — |
-| Matheus | — |
-| Ruylis | — |
-
----
-
-## Referências
-
-- BREIMAN, L. Random Forests. *Machine Learning*, v. 45, n. 1, p. 5–32, 2001.
-- DRUCKER, H. et al. Support Vector Regression Machines. *Advances in Neural Information Processing Systems 9*, MIT Press, 1997.
-- JAMES, G.; WITTEN, D.; HASTIE, T.; TIBSHIRANI, R. *An Introduction to Statistical Learning*. 2. ed. Springer, 2021.
-- SINNOTT, R. W. Virtues of the Haversine. *Sky and Telescope*, v. 68, n. 2, p. 159, 1984.
-- PEDREGOSA, F. et al. Scikit-learn: Machine Learning in Python. *JMLR*, v. 12, p. 2825–2830, 2011.
-
+- Erika A. Creatto
+- Felipe F. de França
+- Matheus H. de C. Rumão
+- Reinaldo Gomes
+- Ruylis B. Catelan
