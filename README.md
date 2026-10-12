@@ -281,6 +281,12 @@ O coeficiente da distância equivale a cerca de US$ 2,12 por quilômetro. Interc
 
 ## Dashboard
 
+![Visão geral do dashboard](docs/imagens/dashboard_visao_geral.png)
+
+![Comparação de modelos](docs/imagens/dashboard_comparacao.png)
+
+![Ajuste dos modelos](docs/imagens/dashboard_ajuste.png)
+
 Aplicação em Streamlit com o Random Forest treinado na base completa.
 
 | Aba | Conteúdo |
