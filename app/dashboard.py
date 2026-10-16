@@ -20,8 +20,7 @@ PASTA_MODELOS = BASE_DIR / "app"
 
 st.set_page_config(page_title="Previsão de Tarifas Uber", layout="wide")
 
-# Paleta: amarelo da marca para destaques de interface; cores dos gráficos validadas
-# para fundo escuro e daltonismo (azul, âmbar, verde-água) e cinza para a referência.
+
 AMARELO = "#FFD400"
 FUNDO = "#0F1115"
 SUPERFICIE = "#171A21"
@@ -669,8 +668,7 @@ with aba4:
         '<div class="callout"><div class="t">Veredito</div><div class="b"><b>Random Forest.</b> Maior R² e menor '
         'RMSE nos dois experimentos e maior média na validação cruzada. Erra em média '
         f'US$ {br(rf1["MAE"])} por corrida, contra US$ {br(lr1["MAE"])} da Regressão Linear. O SVR empata na precisão '
-        'nas mesmas 20.000 corridas, mas treina 7 vezes mais devagar, prevê cerca de 240 vezes mais devagar e não '
-        'terminou de treinar com a base completa em 30 minutos.</div></div>',
+        'nas mesmas 20.000 corridas, mas treina 7 vezes mais devagar e prevê cerca de 240 vezes mais devagar.</div></div>',
         unsafe_allow_html=True,
     )
 

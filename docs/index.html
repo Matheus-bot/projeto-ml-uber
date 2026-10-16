@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Previsão de Tarifas Uber · Machine Learning</title>
+<meta name="description" content="Estudo de caso: previsão de tarifas de corridas da Uber em Nova York com Regressão Linear, Random Forest e SVR.">
+<meta property="og:title" content="Quanto custa uma corrida em Nova York?">
+<meta property="og:description" content="Previsão de tarifas da Uber com Machine Learning: 191.735 corridas, três algoritmos e um dashboard interativo.">
+<meta property="og:image" content="site/og.jpg">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: single reading column (~68ch) with full-bleed figures; a dark "taximeter" readout anchors the hero. */
+:root {
+  --bg: #F4F5F7;
+  --surface: #FFFFFF;
+  --ink: #161A24;
+  --muted: #586072;
+  --rule: #D8DCE3;
+  --accent: #F2C200;
+  --accent-ink: #7A5E00;
+  --meter-bg: #161A24;
+  --meter-ink: #FFD400;
+  --meter-dim: #9AA1B0;
+  --font-display: "Archivo", "Arial Narrow", Arial, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11141B; --surface: #191D27; --ink: #E8EAF0; --muted: #9AA1B0; --rule: #2B3140;
+    --accent: #FFD400; --accent-ink: #FFD400; --meter-bg: #0B0D12; --meter-ink: #FFD400; --meter-dim: #8A91A0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11141B; --surface: #191D27; --ink: #E8EAF0; --muted: #9AA1B0; --rule: #2B3140;
+  --accent: #FFD400; --accent-ink: #FFD400; --meter-bg: #0B0D12; --meter-ink: #FFD400; --meter-dim: #8A91A0;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.6; }
+#page { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 64px; }
+.wrap { max-width: 760px; margin: 0 auto; }
+.wide { max-width: 1000px; margin: 0 auto; }
+
+/* language visibility */
+#page.pt [lang="en"], #page.en [lang="pt"] { display: none !important; }
+
+/* top bar */
+.bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 40px; }
+.tag { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.langs { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; padding: 3px; background: var(--surface); }
+.langs button { font: 500 13px var(--font-mono); letter-spacing: .04em; border: 0; background: transparent; color: var(--muted); padding: 6px 14px; border-radius: 999px; cursor: pointer; }
+.langs button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.langs button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* hero */
+h1 { font-family: var(--font-display); font-stretch: 78%; font-weight: 800; font-size: clamp(38px, 7vw, 64px); line-height: 1.02; letter-spacing: -.01em; margin: 0 0 18px; text-wrap: balance; }
+.lede { font-size: 19px; color: var(--muted); margin: 0 0 32px; max-width: 62ch; }
+.meter { background: var(--meter-bg); border-radius: 10px; padding: 18px 22px; display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 18px; color: var(--meter-dim); }
+.meter > div { min-width: 0; }
+.meter .k { font: 500 11px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.meter .v { font: 500 clamp(26px, 5vw, 40px)/1.1 var(--font-mono); color: var(--meter-ink); font-variant-numeric: tabular-nums; margin-top: 4px; }
+.meter .v.sm { font-size: clamp(22px, 3.6vw, 30px); color: #F1F2F5; }
+.meter .s { font-size: 12.5px; margin-top: 2px; }
+.credit-line { font-size: 14px; color: var(--muted); margin-top: 16px; }
+
+/* sections */
+section { margin-top: 64px; }
+.eyebrow { font: 500 12px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent-ink); margin: 0 0 8px; }
+h2 { font-family: var(--font-display); font-stretch: 85%; font-weight: 750; font-size: clamp(26px, 4.2vw, 36px); line-height: 1.12; margin: 0 0 14px; text-wrap: balance; }
+h3 { font-family: var(--font-display); font-stretch: 92%; font-weight: 700; font-size: 20px; margin: 0 0 6px; }
+p { margin: 0 0 14px; max-width: 68ch; }
+strong { font-weight: 600; }
+.num { font-family: var(--font-mono); font-size: .92em; font-variant-numeric: tabular-nums; }
+
+figure { margin: 22px 0 26px; }
+figure img { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--rule); background: #12151D; }
+figcaption { font-size: 13.5px; color: var(--muted); margin-top: 8px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* pipeline (a real sequence) */
+.steps { list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 0; counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 44px 1fr; gap: 14px; padding: 14px 0; border-top: 1px solid var(--rule); counter-increment: s; }
+.steps li:last-child { border-bottom: 1px solid var(--rule); }
+.steps li::before { content: counter(s, decimal-leading-zero); font: 500 15px var(--font-mono); color: var(--accent-ink); padding-top: 2px; }
+.steps li > div { min-width: 0; }
+.steps p { margin: 0; color: var(--muted); font-size: 16px; }
+
+/* findings */
+.findings { display: grid; gap: 28px; margin-top: 8px; }
+.finding .big { font: 500 30px/1 var(--font-mono); color: var(--accent-ink); font-variant-numeric: tabular-nums; margin-bottom: 8px; }
+
+/* results table */
+.tbl { overflow-x: auto; margin: 18px 0 8px; }
+table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 15px; }
+th, td { text-align: right; padding: 9px 12px; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+th { font: 500 11.5px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+td { font-family: var(--font-mono); font-size: 14.5px; }
+td:first-child { font-family: var(--font-body); font-size: 15px; }
+tr.win td { font-weight: 600; }
+td .best { background: var(--accent); color: #161A24; padding: 1px 6px; border-radius: 4px; }
+.note { font-size: 14px; color: var(--muted); }
+
+.callout { border-left: 4px solid var(--accent); background: var(--surface); padding: 16px 18px; border-radius: 0 8px 8px 0; margin: 22px 0; }
+.callout p:last-child { margin-bottom: 0; }
+
+.learn { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 14px; }
+.learn li { padding-left: 18px; position: relative; max-width: 68ch; }
+.learn li::before { content: ""; position: absolute; left: 0; top: .7em; width: 8px; height: 8px; background: var(--accent); border-radius: 2px; }
+
+.stack { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.stack span { font: 500 13px var(--font-mono); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 12px; background: var(--surface); }
+
+.credits { border-top: 2px solid var(--ink); padding-top: 22px; }
+.credits dl { display: grid; grid-template-columns: 150px 1fr; gap: 8px 16px; margin: 0; font-size: 15.5px; }
+.credits dt { font: 500 12px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+.credits dd { margin: 0; min-width: 0; }
+a { color: var(--ink); text-decoration-color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.gh { display: inline-block; margin-top: 18px; font: 500 15px var(--font-mono); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 6px; text-decoration: none; word-break: break-all; }
+
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .meter { grid-template-columns: 1fr 1fr; }
+  .meter > div:first-child { grid-column: 1 / -1; }
+  .pair { grid-template-columns: 1fr; }
+  .credits dl { grid-template-columns: 1fr; gap: 2px; }
+  .credits dd { margin-bottom: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+pre { background: var(--meter-bg); color: #E8EAF0; border-radius: 8px; padding: 16px 18px; overflow-x: auto; font: 400 14.5px/1.6 var(--font-mono); margin: 14px 0 8px; }
+pre .c { color: #8A91A0; }
+img.map { max-width: 620px; margin: 0 auto; }
+body { margin: 0; }
+</style>
+</head>
+<body>
+
+<div id="page" class="pt">
+<div class="wide">
+  <div class="bar">
+    <span class="tag"><span lang="pt">Estudo de caso · Machine Learning</span><span lang="en">Case study · Machine Learning</span></span>
+    <div class="langs" role="group" aria-label="Idioma / Language">
+      <button type="button" id="btn-pt" data-l="pt" aria-pressed="true">PT</button>
+      <button type="button" id="btn-en" data-l="en" aria-pressed="false">EN</button>
+    </div>
+  </div>
+</div>
+
+<header class="wrap">
+  <h1>
+    <span lang="pt">Quanto custa uma corrida em Nova York?</span>
+    <span lang="en">How much does a ride in New York cost?</span>
+  </h1>
+  <p class="lede" lang="pt">Usamos quase 200 mil corridas reais da Uber para ensinar um modelo a prever o preço de uma viagem antes dela acontecer. Comparamos três algoritmos, escolhemos o melhor e colocamos tudo em um dashboard interativo.</p>
+  <p class="lede" lang="en">We used almost 200,000 real Uber rides to teach a model to predict the price of a trip before it happens. We compared three algorithms, picked the best one and put everything into an interactive dashboard.</p>
+
+  <div class="meter" aria-label="Resultados principais / Key results">
+    <div>
+      <div class="k"><span lang="pt">Erro médio por corrida</span><span lang="en">Average error per ride</span></div>
+      <div class="v"><span lang="pt">US$ 1,65</span><span lang="en">US$ 1.65</span></div>
+      <div class="s"><span lang="pt">3× menor que chutar a média</span><span lang="en">3× lower than guessing the average</span></div>
+    </div>
+    <div>
+      <div class="k">R²</div>
+      <div class="v sm"><span lang="pt">0,888</span><span lang="en">0.888</span></div>
+      <div class="s"><span lang="pt">da variação explicada</span><span lang="en">of variance explained</span></div>
+    </div>
+    <div>
+      <div class="k"><span lang="pt">Corridas</span><span lang="en">Rides</span></div>
+      <div class="v sm"><span lang="pt">191.735</span><span lang="en">191,735</span></div>
+      <div class="s"><span lang="pt">após a limpeza</span><span lang="en">after cleaning</span></div>
+    </div>
+  </div>
+  <p class="credit-line" lang="pt">Projeto em grupo da disciplina de Aprendizagem de Máquina · Desenvolvimento de Software Multiplataforma · FATEC Indaiatuba</p>
+  <p class="credit-line" lang="en">Group project for the Machine Learning course · Multiplatform Software Development · FATEC Indaiatuba (Brazil)</p>
+</header>
+
+<div class="wide">
+  <figure>
+    <img src="site/a1_cabecalho.webp" alt="Cabeçalho do dashboard / Dashboard header" width="1500" height="314">
+  </figure>
+</div>
+
+<!-- 1. Problem -->
+<section class="wrap">
+  <p class="eyebrow"><span lang="pt">O desafio</span><span lang="en">The challenge</span></p>
+  <h2><span lang="pt">Prever o preço só com o que se sabe antes da viagem</span><span lang="en">Predict the price using only what is known before the trip</span></h2>
+  <p lang="pt">O dataset público <em>Uber Fares</em> (Kaggle) traz 200 mil corridas feitas em Nova York entre 2009 e 2015. Cada corrida tem o preço pago, as coordenadas de embarque e desembarque, a data, a hora e o número de passageiros. O objetivo foi um problema de <strong>regressão</strong>: prever o valor da tarifa em dólares.</p>
+  <p lang="en">The public <em>Uber Fares</em> dataset (Kaggle) contains 200,000 rides taken in New York between 2009 and 2015. Each ride has the fare paid, pickup and drop-off coordinates, date, time and passenger count. The goal was a <strong>regression</strong> problem: predict the fare in dollars.</p>
+</section>
+
+<!-- 2. Pipeline -->
+<section class="wrap">
+  <p class="eyebrow"><span lang="pt">O caminho</span><span lang="en">The process</span></p>
+  <h2><span lang="pt">Do dado bruto ao modelo</span><span lang="en">From raw data to model</span></h2>
+  <ol class="steps">
+    <li><div>
+      <h3><span lang="pt">Limpeza</span><span lang="en">Cleaning</span></h3>
+      <p lang="pt">Removemos o que era impossível: tarifas negativas, zero passageiros, coordenadas fora de Nova York e corridas com menos de 100 m. Cerca de 4% da base saiu.</p>
+      <p lang="en">We removed what was impossible: negative fares, zero passengers, coordinates outside New York and rides shorter than 100 m. About 4% of the data was dropped.</p>
+    </div></li>
+    <li><div>
+      <h3><span lang="pt">Novas variáveis</span><span lang="en">Feature engineering</span></h3>
+      <p lang="pt">O dataset não tinha a distância. Calculamos com a fórmula de Haversine, que mede a distância em linha reta sobre a Terra. Também criamos hora, dia da semana, mês, ano e um indicador de corrida de aeroporto (JFK, LaGuardia e Newark).</p>
+      <p lang="en">The dataset had no distance. We computed it with the Haversine formula, the straight-line distance over the Earth's surface. We also created hour, weekday, month, year and an airport-trip flag (JFK, LaGuardia and Newark).</p>
+    </div></li>
+    <li><div>
+      <h3><span lang="pt">Treino e teste</span><span lang="en">Train and test</span></h3>
+      <p lang="pt">80% das corridas para o modelo aprender e 20% (38 mil corridas) guardadas como prova final. A padronização das escalas foi ajustada só com o treino, para o modelo não "ver" a prova antes.</p>
+      <p lang="en">80% of rides for the model to learn from and 20% (38k rides) held out as the final exam. Feature scaling was fitted on the training set only, so the model never "sees" the exam in advance.</p>
+    </div></li>
+    <li><div>
+      <h3><span lang="pt">Modelagem</span><span lang="en">Modeling</span></h3>
+      <p lang="pt">Regressão Linear, Random Forest e SVR, mais um modelo de referência que sempre chuta a média. As configurações de cada um foram escolhidas por validação cruzada.</p>
+      <p lang="en">Linear Regression, Random Forest and SVR, plus a baseline that always predicts the average. Each model's settings were chosen with cross-validation.</p>
+    </div></li>
+    <li><div>
+      <h3><span lang="pt">Avaliação</span><span lang="en">Evaluation</span></h3>
+      <p lang="pt">Quatro métricas (R², MAE, RMSE e MAPE), todas medidas nas mesmas corridas de teste.</p>
+      <p lang="en">Four metrics (R², MAE, RMSE and MAPE), all measured on the same test rides.</p>
+    </div></li>
+  </ol>
+</section>
+
+<!-- 3. Findings -->
+<section class="wrap">
+  <p class="eyebrow"><span lang="pt">O que os dados mostraram</span><span lang="en">What the data showed</span></p>
+  <h2><span lang="pt">Três descobertas que guiaram o projeto</span><span lang="en">Three findings that shaped the project</span></h2>
+  <p lang="pt">Antes dos números, uma imagem. Colocamos cada embarque e desembarque em um gráfico, sem nenhum mapa por baixo, e Nova York apareceu sozinha. Manhattan surge pelo desenho das ruas, e os aeroportos se destacam em amarelo.</p>
+  <p lang="en">Before the numbers, a picture. We plotted every pickup and drop-off, with no map underneath, and New York appeared on its own. Manhattan emerges from its street grid, and the airports stand out in yellow.</p>
+  <figure><img class="map" src="site/mapa.webp" alt="Mapa de Nova York formado pelas corridas / Map of New York drawn by the rides" width="1200" height="1285" loading="lazy">
+    <figcaption><span lang="pt">Cada ponto é um embarque ou desembarque real. Em amarelo, corridas de aeroporto (JFK, LaGuardia e Newark).</span><span lang="en">Each dot is a real pickup or drop-off. Yellow marks airport rides (JFK, LaGuardia and Newark).</span></figcaption></figure>
+  <div class="findings">
+    <div class="finding">
+      <div class="big"><span lang="pt">0,90 vs 0,44</span><span lang="en">0.90 vs 0.44</span></div>
+      <h3><span lang="pt">A variável que criamos foi a mais importante</span><span lang="en">The feature we created mattered most</span></h3>
+      <p lang="pt">A distância calculada teve correlação de 0,90 com o preço. A melhor variável original do dataset chegava a só 0,44. No modelo final, a distância respondeu por cerca de 88% da importância.</p>
+      <p lang="en">The computed distance had a 0.90 correlation with price. The best original column in the dataset reached only 0.44. In the final model, distance accounted for about 88% of feature importance.</p>
+    </div>
+  </div>
+</section>
+<div class="wide"><figure><img src="site/a2_corr_hora.webp" alt="Correlação com a tarifa e tarifa média por hora / Correlation with fare and average fare by hour" width="1500" height="620" loading="lazy">
+  <figcaption><span lang="pt">À esquerda, o que mais influencia o preço. À direita, o preço médio por hora do dia.</span><span lang="en">Left: what drives price the most. Right: average fare by hour of day.</span></figcaption></figure></div>
+
+<section class="wrap" style="margin-top:28px">
+  <div class="findings">
+    <div class="finding">
+      <div class="big"><span lang="pt">2 regimes</span><span lang="en">2 regimes</span></div>
+      <h3><span lang="pt">Corridas de aeroporto seguem outra lógica de preço</span><span lang="en">Airport rides follow a different pricing logic</span></h3>
+      <p lang="pt">São só 5% das corridas, mas custam quase quatro vezes mais. Mesmo assim, saem mais baratas por km: o trajeto JFK–Manhattan tem tarifa fixa, e em viagens longas o valor de saída se dilui.</p>
+      <p lang="en">They are only 5% of rides but cost almost four times more. Even so, they are cheaper per km: the JFK–Manhattan route has a flat fare, and on long trips the base fee gets diluted.</p>
+    </div>
+  </div>
+</section>
+<div class="wide"><figure><img src="site/a2_dist.webp" alt="Distância versus tarifa / Distance versus fare" width="1500" height="633" loading="lazy">
+  <figcaption><span lang="pt">Quanto mais longe, mais caro. Os pontos amarelos (aeroporto) formam faixas horizontais por causa da tarifa fixa.</span><span lang="en">The farther, the pricier. Yellow points (airport) form horizontal bands because of the flat fare.</span></figcaption></figure>
+  <figure><img src="site/a1_regimes.webp" alt="Dois regimes de preço / Two pricing regimes" width="1500" height="242" loading="lazy">
+    <figcaption><span lang="pt">Corridas comuns e de aeroporto: tarifa média, distância média e custo por km.</span><span lang="en">Regular and airport rides: average fare, average distance and cost per km.</span></figcaption></figure></div>
+
+<section class="wrap" style="margin-top:28px">
+  <div class="findings">
+    <div class="finding">
+      <div class="big">5h · 5 a.m.</div>
+      <h3><span lang="pt">O pico de preço é de madrugada, e não por causa do horário</span><span lang="en">Prices peak before dawn, and not because of the hour itself</span></h3>
+      <p lang="pt">Às 5h, a proporção de corridas para o aeroporto é muito maior: é quem vai pegar voo cedo. A média sobe por causa do tipo de viagem. A correlação da hora com o preço é quase zero, porque o efeito é em "onda", e uma linha reta não capta isso.</p>
+      <p lang="en">At 5 a.m. the share of airport trips is much higher: people catching early flights. The average rises because of the kind of trip. The hour's correlation with price is close to zero because the effect is wave-shaped, which a straight line cannot capture.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 4. Models -->
+<section class="wrap">
+  <p class="eyebrow"><span lang="pt">Comparação</span><span lang="en">Comparison</span></p>
+  <h2><span lang="pt">Uma comparação justa entre três algoritmos</span><span lang="en">A fair comparison of three algorithms</span></h2>
+  <p lang="pt"><strong>Regressão Linear</strong> traça uma linha reta. <strong>Random Forest</strong> combina 100 árvores de decisão e tira a média. <strong>SVR</strong> traça uma curva com uma faixa de tolerância, ignorando erros pequenos. Antes de comparar, ajustamos cada um: no SVR, o kernel RBF (que enxerga curvas) venceu o linear em todas as métricas.</p>
+  <p lang="en"><strong>Linear Regression</strong> fits a straight line. <strong>Random Forest</strong> averages 100 decision trees. <strong>SVR</strong> fits a curve with a tolerance band that ignores small errors. Before comparing, we tuned each one: for SVR, the RBF kernel (which captures curves) beat the linear kernel on every metric.</p>
+</section>
+<section class="wrap" style="margin-top:28px">
+  <h3><span lang="pt">Ajuste dos modelos</span><span lang="en">Model tuning</span></h3>
+  <p lang="pt">Cada algoritmo tem configurações que não aprende sozinho, os hiperparâmetros. Em vez de chutar, testamos várias combinações com <strong>validação cruzada de 5 partições</strong> no treino, sem tocar nos dados de teste. No SVR, comparamos primeiro o kernel: o linear só enxerga linha reta e ficou igual à Regressão Linear, e o RBF captou as curvas e ainda treinou 4 vezes mais rápido.</p>
+  <p lang="en">Each algorithm has settings it does not learn on its own, the hyperparameters. Instead of guessing, we tested several combinations with <strong>5-fold cross-validation</strong> on the training set, without touching the test data. For SVR, we first compared kernels: the linear one only sees straight lines and matched Linear Regression, while RBF captured the curves and trained 4 times faster.</p>
+</section>
+<div class="wide">
+  <figure><img src="site/a3_kernel.webp" alt="Comparação de kernels do SVR / SVR kernel comparison" width="1500" height="365" loading="lazy">
+    <figcaption><span lang="pt">Kernel linear × RBF nas mesmas condições.</span><span lang="en">Linear vs RBF kernel under the same conditions.</span></figcaption></figure>
+  <figure><img src="site/a3_grids.webp" alt="Busca de hiperparâmetros / Hyperparameter search" width="1500" height="518" loading="lazy">
+    <figcaption><span lang="pt">Cada linha é uma configuração testada; o ponto amarelo é a escolhida. No Random Forest, duas opções empataram, e ficamos com a mais simples.</span><span lang="en">Each row is a tested configuration; the yellow dot is the chosen one. For Random Forest two options tied, and we kept the simpler one.</span></figcaption></figure>
+</div>
+<section class="wrap" style="margin-top:20px">
+  <div class="callout">
+    <p lang="pt"><strong>O obstáculo:</strong> o tempo de treino do SVR cresce entre o quadrado e o cubo do número de corridas, então ele não é viável com a base inteira. Por isso, a comparação principal colocou os três modelos para aprender com as <strong>mesmas 20 mil corridas</strong> e fazer a <strong>mesma prova</strong> de 38 mil. Assim, a diferença vem só do algoritmo.</p>
+    <p lang="en"><strong>The obstacle:</strong> SVR training time grows between the square and the cube of the number of rides, so it is not viable on the full dataset. That is why the main comparison had all three models learn from the <strong>same 20,000 rides</strong> and take the <strong>same 38,000-ride test</strong>. That way, any difference comes from the algorithm alone.</p>
+  </div>
+</section>
+<div class="wide"><figure><img src="site/a4_cards.webp" alt="Cartões de resultados dos modelos / Model result cards" width="1500" height="484" loading="lazy">
+  <figcaption><span lang="pt">Resultado com as mesmas 20 mil corridas de treino, no dashboard.</span><span lang="en">Results with the same 20,000 training rides, in the dashboard.</span></figcaption></figure></div>
+
+<section class="wrap" style="margin-top:20px">
+  <div class="tbl">
+    <table>
+      <thead><tr>
+        <th><span lang="pt">Modelo</span><span lang="en">Model</span></th>
+        <th>R² ↑</th><th>MAE ↓</th><th>RMSE ↓</th><th>MAPE ↓</th>
+      </tr></thead>
+      <tbody lang="pt">
+        <tr><td>Referência (média)</td><td>0,00</td><td>US$ 5,92</td><td>US$ 9,20</td><td>67%</td></tr>
+        <tr><td>Regressão Linear</td><td>0,845</td><td>US$ 2,06</td><td>US$ 3,62</td><td>24,8%</td></tr>
+        <tr class="win"><td>Random Forest</td><td><span class="best">0,874</span></td><td>US$ 1,79</td><td><span class="best">US$ 3,27</span></td><td>22,4%</td></tr>
+        <tr><td>SVR (RBF)</td><td>0,873</td><td><span class="best">US$ 1,72</span></td><td>US$ 3,28</td><td><span class="best">19,9%</span></td></tr>
+      </tbody>
+      <tbody lang="en">
+        <tr><td>Baseline (mean)</td><td>0.00</td><td>US$ 5.92</td><td>US$ 9.20</td><td>67%</td></tr>
+        <tr><td>Linear Regression</td><td>0.845</td><td>US$ 2.06</td><td>US$ 3.62</td><td>24.8%</td></tr>
+        <tr class="win"><td>Random Forest</td><td><span class="best">0.874</span></td><td>US$ 1.79</td><td><span class="best">US$ 3.27</span></td><td>22.4%</td></tr>
+        <tr><td>SVR (RBF)</td><td>0.873</td><td><span class="best">US$ 1.72</span></td><td>US$ 3.28</td><td><span class="best">19.9%</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note" lang="pt">↑ maior é melhor · ↓ menor é melhor. Mesmas 20 mil corridas de treino e mesmas 38 mil de teste.</p>
+  <p class="note" lang="en">↑ higher is better · ↓ lower is better. Same 20,000 training rides and same 38,000 test rides.</p>
+
+  <p lang="pt" style="margin-top:18px">Deu <strong>empate técnico</strong> entre Random Forest e SVR, com diferenças de centavos. O SVR erra menos nas corridas baratas, que são a maioria, e por isso tem o menor erro médio. O Random Forest erra menos nas corridas caras, e por isso ganha no R² e no RMSE, que pesam mais os erros grandes.</p>
+  <p lang="en" style="margin-top:18px">Random Forest and SVR came out in a <strong>statistical tie</strong>, with differences of cents. SVR errs less on cheap rides, which are the majority, so it has the lowest average error. Random Forest errs less on expensive rides, so it wins on R² and RMSE, which weigh large errors more.</p>
+</section>
+<div class="wide"><figure><img src="site/a4_faixa.webp" alt="Erro médio por faixa de preço / Mean error by price range" width="1500" height="569" loading="lazy">
+  <figcaption><span lang="pt">O erro cresce com o preço: corridas caras são mais raras e mais difíceis de prever.</span><span lang="en">Error grows with price: expensive rides are rarer and harder to predict.</span></figcaption></figure></div>
+
+<!-- 5. Decision -->
+<section class="wrap" style="margin-top:36px">
+  <p class="eyebrow"><span lang="pt">A decisão</span><span lang="en">The decision</span></p>
+  <h2><span lang="pt">Precisão empatada, praticidade não</span><span lang="en">Tied on accuracy, not on practicality</span></h2>
+  <p lang="pt">Com precisão equivalente, o desempate foi o custo. O SVR treina cerca de 7 vezes mais devagar e leva cerca de 240 vezes mais tempo para prever. Já o Random Forest consegue aprender com todas as corridas. Treinado com a base completa, ele chegou ao melhor resultado do projeto: <strong class="num">R² 0,888</strong> e erro médio de <strong class="num">US$ 1,65</strong> por corrida.</p>
+  <p lang="en">With equivalent accuracy, cost broke the tie. SVR trains about 7 times slower and takes about 240 times longer to predict. Random Forest, on the other hand, can learn from every ride. Trained on the full dataset, it reached the project's best result: <strong class="num">R² 0.888</strong> and an average error of <strong class="num">US$ 1.65</strong> per ride.</p>
+  <p lang="pt">A validação cruzada confirmou a mesma ordem entre os modelos, e a diferença entre treino e teste do Random Forest ficou dentro do aceitável.</p>
+  <p lang="en">Cross-validation confirmed the same ranking, and Random Forest's train–test gap stayed within acceptable limits.</p>
+</section>
+<div class="wide"><figure><img src="site/a4_overfit_custo.webp" alt="Overfitting e custo computacional / Overfitting and computational cost" width="1500" height="480" loading="lazy">
+  <figcaption><span lang="pt">À esquerda, o quanto cada modelo "decorou" o treino. À direita, os tempos de treino e previsão.</span><span lang="en">Left: how much each model "memorized" the training data. Right: training and prediction times.</span></figcaption></figure>
+  <figure><img src="site/a4_cv.webp" alt="Validação cruzada / Cross-validation" width="1500" height="390" loading="lazy">
+    <figcaption><span lang="pt">Validação cruzada: cada ponto é uma partição e o traço é a média. A ordem dos modelos se manteve.</span><span lang="en">Cross-validation: each dot is one fold and the tick is the mean. The model ranking held.</span></figcaption></figure></div>
+
+<!-- 6. Dashboard -->
+<section class="wrap" style="margin-top:36px">
+  <p class="eyebrow">Dashboard</p>
+  <h2><span lang="pt">Tudo em um dashboard interativo</span><span lang="en">Everything in an interactive dashboard</span></h2>
+  <p lang="pt">Construímos um dashboard em Streamlit com cinco abas: visão geral, análise exploratória, ajuste dos modelos, comparação de modelos e um <strong>simulador</strong>, onde se escolhe a origem, o destino e o horário para ver a tarifa prevista pelo modelo final.</p>
+  <p lang="en">We built a Streamlit dashboard with five tabs: overview, exploratory analysis, model tuning, model comparison and a <strong>fare simulator</strong>, where you pick origin, destination and time to see the final model's predicted fare.</p>
+</section>
+<div class="wide">
+  <figure><img src="site/simulador.webp" alt="Simulador de tarifa / Fare simulator" width="1500" height="911" loading="lazy">
+    <figcaption><span lang="pt">Simulação de Times Square até o aeroporto JFK, com a tarifa prevista e o trajeto no mapa.</span><span lang="en">Simulation from Times Square to JFK airport, with the predicted fare and the route on the map.</span></figcaption></figure>
+  <figure><img src="site/a1_hist.webp" alt="Distribuição das tarifas / Fare distribution" width="1500" height="514" loading="lazy">
+    <figcaption><span lang="pt">Na visão geral: a maioria das corridas é barata, com uma cauda de corridas longas e de aeroporto.</span><span lang="en">In the overview: most rides are cheap, with a tail of long and airport rides.</span></figcaption></figure>
+</div>
+
+<!-- 7. Learnings -->
+<section class="wrap" style="margin-top:36px">
+  <p class="eyebrow"><span lang="pt">Aprendizados</span><span lang="en">Takeaways</span></p>
+  <h2><span lang="pt">O que levamos do projeto</span><span lang="en">What we took away</span></h2>
+  <ul class="learn">
+    <li lang="pt"><strong>Engenharia de variáveis pesou mais que o algoritmo.</strong> Uma coluna bem pensada (a distância) fez mais diferença que trocar de modelo.</li>
+    <li lang="en"><strong>Feature engineering mattered more than the algorithm.</strong> One well-designed column (distance) made more difference than switching models.</li>
+    <li lang="pt"><strong>Comparar exige condições iguais.</strong> Quando um modelo não aguenta todos os dados, a comparação justa precisa colocar todos na mesma amostra.</li>
+    <li lang="en"><strong>Comparing requires equal conditions.</strong> When one model cannot handle all the data, a fair comparison must put every model on the same sample.</li>
+    <li lang="pt"><strong>O melhor modelo não é só o mais preciso.</strong> Velocidade de previsão e capacidade de escalar contam tanto quanto a métrica.</li>
+    <li lang="en"><strong>The best model is not just the most accurate.</strong> Prediction speed and scalability count as much as the metric.</li>
+    <li lang="pt"><strong>Conhecer os limites.</strong> A distância é em linha reta e o dataset não tem trânsito, pedágio nem tarifa dinâmica. Isso explica boa parte do erro que sobra.</li>
+    <li lang="en"><strong>Know the limits.</strong> Distance is a straight line, and the data has no traffic, tolls or surge pricing. That explains much of the remaining error.</li>
+  </ul>
+  <div class="stack" aria-label="Tecnologias / Tech stack">
+    <span>Python</span><span>pandas</span><span>scikit-learn</span><span>Streamlit</span><span>Altair</span><span>Matplotlib</span>
+  </div>
+</section>
+
+<!-- Run -->
+<section class="wrap">
+  <p class="eyebrow"><span lang="pt">Rodando o projeto</span><span lang="en">Running the project</span></p>
+  <h2><span lang="pt">Como executar</span><span lang="en">How to run it</span></h2>
+<pre><span class="c"># 1. Clonar o repositório / Clone the repository</span>
+git clone https://github.com/Matheus-bot/projeto-ml-uber.git
+cd projeto-ml-uber
+
+<span class="c"># 2. Instalar as dependências / Install dependencies</span>
+pip install -r requirements.txt
+
+<span class="c"># 3. Abrir o dashboard / Launch the dashboard</span>
+streamlit run app/dashboard.py</pre>
+  <p class="note" lang="pt">O notebook <span class="num">notebooks/projeto_uber.ipynb</span> refaz todo o processo, da limpeza ao treino dos modelos.</p>
+  <p class="note" lang="en">The notebook <span class="num">notebooks/projeto_uber.ipynb</span> reproduces the whole process, from cleaning to model training.</p>
+</section>
+
+<!-- 8. Credits -->
+<section class="wrap credits">
+  <dl>
+    <dt><span lang="pt">Grupo</span><span lang="en">Team</span></dt>
+    <dd>Erika A. Creatto · Felipe F. de França · Matheus H. de C. Rumão · Reinaldo Gomes · Ruylis B. Catelan</dd>
+    <dt><span lang="pt">Professor</span><span lang="en">Professor</span></dt>
+    <dd>Sérgio Gustavo Medina Pereira</dd>
+    <dt><span lang="pt">Disciplina</span><span lang="en">Course</span></dt>
+    <dd><span lang="pt">Aprendizagem de Máquina · Desenvolvimento de Software Multiplataforma</span><span lang="en">Machine Learning · Multiplatform Software Development</span></dd>
+    <dt><span lang="pt">Instituição</span><span lang="en">Institution</span></dt>
+    <dd>FATEC Indaiatuba Dr. Archimedes Lammoglia</dd>
+    <dt><span lang="pt">Dados</span><span lang="en">Data</span></dt>
+    <dd>Uber Fares Dataset (Kaggle)</dd>
+  </dl>
+  <a class="gh" href="https://github.com/Matheus-bot/projeto-ml-uber">github.com/Matheus-bot/projeto-ml-uber</a>
+</section>
+</div>
+
+<script>
+(function () {
+  var page = document.getElementById('page');
+  var btns = document.querySelectorAll('.langs button');
+  function setLang(l) {
+    page.className = l;
+    document.documentElement.lang = l === 'en' ? 'en' : 'pt-BR';
+    btns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.l === l)); });
+    try { localStorage.setItem('lang', l); } catch (e) {}
+  }
+  var start = 'pt';
+  if (location.hash === '#en') start = 'en';
+  else { try { var s = localStorage.getItem('lang'); if (s === 'en' || s === 'pt') start = s; } catch (e) {} }
+  setLang(start);
+  btns.forEach(function (b) { b.addEventListener('click', function () { setLang(b.dataset.l); }); });
+})();
+</script>
+</body>
+</html>
